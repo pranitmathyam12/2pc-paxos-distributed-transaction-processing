@@ -1,4 +1,4 @@
-# Fall 25 Distributed Systems – Project 1 (Paxos)
+
 
 A simple local demo of a Paxos-based replicated service with ten client processes and five node processes.
 
