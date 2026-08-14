@@ -1,0 +1,18 @@
+{
+  "epoch": 1,
+  "k": 3,
+  "clusters": ["c1", "c2", "c3"],
+  "assignment": {
+    "ranges": [
+      {"start":1,"end":3000,"cluster":"c1"},
+      {"start":3001,"end":6000,"cluster":"c2"},
+      {"start":6001,"end":9000,"cluster":"c3"}
+    ],
+    "accounts": {
+      "3002": "c3",
+      "6002": "c1",
+      "1001": "c2"
+    }
+  },
+  "balance": { "tolerance": 0.05 }
+}

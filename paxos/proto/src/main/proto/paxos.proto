@@ -1,0 +1,255 @@
+/* I generated this proto file using chatGPT. This is my first time working with gRPCs,
+  I am not familiar with the syntax, but I am sure about the functionality and the usage.
+*/
+
+
+syntax = "proto3";
+
+package paxos;
+
+import "google/protobuf/empty.proto";
+
+option java_package = "org.paxos.proto";
+option java_outer_classname = "PaxosProto";
+option java_multiple_files = true;
+
+// ---------- Core IDs & primitives ----------
+message NodeId     { string id = 1; }
+message ClientId   { string id = 1; }
+message Timestamp  { int64  t  = 1; }
+message SeqNo      { int64  value = 1; }
+
+message Ballot {
+  int64 round    = 1;
+  int32 leaderId = 2;
+}
+
+message Transaction {
+  string sender   = 1;
+  string receiver = 2;
+  int64  amount   = 3;
+}
+
+message ClientMeta {
+  string client_id = 1;
+  int64  timestamp = 2;
+}
+
+message ClientRequest {
+  ClientMeta meta = 1;
+  Transaction tx  = 2;
+}
+
+message ClientReply {
+  ClientMeta meta    = 1;
+  bool       success = 2;
+  string     error   = 3;
+  Ballot     ballot  = 4;
+}
+
+message Request {
+  ClientId   client = 1;
+  Timestamp  ts     = 2;
+  Transaction trans = 3;
+}
+
+// ---------- Two-Phase Commit (2PC) ----------
+// Stage flag for Paxos entries that belong to 2PC
+enum TwoPcStage {
+  TWO_PC_NONE    = 0; // Intra-shard / not a 2PC entry
+  TWO_PC_PREPARE = 1; // Prepare phase entry
+  TWO_PC_COMMIT  = 2; // Commit phase entry
+  TWO_PC_ABORT   = 3; // Abort phase entry
+}
+
+message AcceptMsg {
+  Ballot  b = 1;
+  SeqNo   s = 2;
+  Request m = 3;
+  TwoPcStage stage = 4;
+}
+
+message AcceptedMsg {
+  Ballot b    = 1;
+  SeqNo  s    = 2;
+  NodeId from = 3;
+}
+
+message CommitMsg {
+  Ballot  b = 1;
+  SeqNo   s = 2;
+  Request m = 3;
+  TwoPcStage stage = 4;
+}
+
+
+message PrepareMsg {
+  Ballot b    = 1;
+  NodeId from = 2;
+}
+
+message AcceptTriplet {
+  Ballot  b = 1;
+  SeqNo   s = 2;
+  Request m = 3;
+}
+
+message AcceptEntry {
+  SeqNo   s         = 1;
+  Ballot  srcBallot = 2;
+  Request m         = 3;
+  bool    isNoop    = 4;
+  TwoPcStage stage  = 5;
+}
+
+message PromiseMsg {
+  Ballot                 b               = 1;
+  NodeId                 from            = 2;
+  repeated AcceptTriplet accept_log      = 3;
+  int64                  checkpoint_seq  = 4;
+  Ballot                 highest_seen    = 5;
+}
+
+message HeartbeatMsg {
+  Ballot b    = 1;
+  NodeId from = 2;
+  int64 commitIndex = 3;
+}
+
+message NodeControl {
+  bool active = 1;
+  bool isLeaderFailure = 2;
+}
+
+message NewViewMsg {
+  Ballot              b       = 1;
+  repeated AcceptEntry entries = 2;
+  NodeId              from    = 3;
+}
+
+message NewViewAck {
+  Ballot  b          = 1;
+  SeqNo   lastApplied = 2;
+  NodeId  from       = 3;
+}
+
+message NewViewLog {
+  int64        tsMs   = 1;
+  Ballot       b      = 2;
+  NodeId       leader = 3;
+  repeated AcceptEntry entries = 4;
+}
+
+message PrintViewDump {
+  repeated NewViewLog items = 1;
+}
+
+message StatusRequest {
+  SeqNo s = 1;
+}
+
+message StatusEntry {
+  NodeId node = 1;
+  string phase = 2;
+}
+
+message StatusDump {
+  repeated StatusEntry entries = 1;
+}
+
+message CatchupRequest {
+  Ballot b       = 1;
+  SeqNo  from    = 2;
+  NodeId requester = 3;
+}
+
+message CatchupReply {
+  repeated CommitMsg commits = 1;
+}
+
+message LogDump {
+  int32 node_id = 1;
+  string content = 2;
+}
+
+message DBDump {
+  int32 node_id = 1;
+  string content = 2;
+}
+
+message BalanceRequest {
+  int32 id = 1;
+}
+
+message BalanceReply {
+  int32 node_id = 1;
+  int32 id = 2;
+  int64 balance = 3;
+}
+
+
+message SnapshotEntry {
+  int32 id = 1;
+  int64 balance = 2;
+}
+
+message SnapshotOffer {
+  int64 lastApplied = 1;
+  repeated SnapshotEntry entries = 2;
+}
+
+// ---------- 2PC control RPCs ----------
+message TwoPcPrepareMsg {
+  string      txn_id = 1;     // client_id:timestamp
+  Transaction tx     = 2;
+  string      digest = 3;
+  int32       coordinator_cluster = 4;
+  int32       participant_cluster = 5;
+}
+
+message TwoPcPreparedReply {
+  string txn_id  = 1;
+  bool   prepared = 2;  // true if participant prepared; false if aborted
+  string error    = 3;  // reason when not prepared
+  string redirect = 4;  // optional host:port of current leader if redirecting
+}
+
+message TwoPcCommitMsg {
+  string txn_id = 1;
+  string digest = 2;
+}
+
+message TwoPcAbortMsg {
+  string txn_id = 1;
+  string digest = 2;
+  string reason = 3;
+}
+
+// ---------- Service ----------
+service NodeService {
+  rpc Prepare    (PrepareMsg) returns (PromiseMsg);
+  rpc NewView    (NewViewMsg) returns (NewViewAck);
+  rpc Accept     (AcceptMsg)  returns (AcceptedMsg);
+  rpc Commit     (CommitMsg)  returns (Ack);
+  rpc Catchup    (CatchupRequest) returns (CatchupReply);
+  rpc Heartbeat  (HeartbeatMsg) returns (Ack);
+  rpc Control    (NodeControl) returns (Ack);
+  rpc Submit     (ClientRequest) returns (ClientReply);
+  rpc GetBalance (BalanceRequest) returns (BalanceReply);
+
+  rpc TwoPcPrepare (TwoPcPrepareMsg) returns (TwoPcPreparedReply);
+  rpc TwoPcCommit  (TwoPcCommitMsg)  returns (Ack);
+  rpc TwoPcAbort   (TwoPcAbortMsg)   returns (Ack);
+  rpc Reset      (google.protobuf.Empty) returns (Ack);
+
+  rpc printLog(google.protobuf.Empty) returns (LogDump);
+  rpc printDB(google.protobuf.Empty) returns (DBDump);
+  rpc PrintView  (google.protobuf.Empty) returns (PrintViewDump);
+  rpc PrintStatus(StatusRequest) returns (StatusDump);
+  rpc GetLocalSnapshot(google.protobuf.Empty) returns (SnapshotOffer);
+  rpc InstallLocalSnapshot(SnapshotOffer) returns (Ack);
+}
+
+message Ack {
+  string msg = 1;
+}
